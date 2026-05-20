@@ -210,6 +210,22 @@ fn default_kiro_cli_context_window() -> usize {
 
 #[derive(Debug, Deserialize, Clone)]
 #[allow(unused)]
+pub struct QGenieCliSettings {
+    /// Model passed to `qgenie agent exec -m MODEL`.
+    /// Defaults to the top-level `ai.model` value.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Advertised context-window size (tokens). Defaults to 200 000.
+    #[serde(default = "default_qgenie_cli_context_window")]
+    pub context_window_size: usize,
+}
+
+fn default_qgenie_cli_context_window() -> usize {
+    200_000
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[allow(unused)]
 pub struct ClaudeCliSettings {
     /// Effort level passed to `claude --effort`. Valid values per Claude Code:
     /// "low", "medium", "high", "xhigh", "max". Leave unset for the model default.
@@ -250,6 +266,7 @@ pub struct AiSettings {
     pub openai_compat: Option<OpenAiCompatSettings>,
     pub kiro_cli: Option<KiroCliSettings>,
     pub claude_cli: Option<ClaudeCliSettings>,
+    pub qgenie_cli: Option<QGenieCliSettings>,
 }
 
 fn default_response_cache_ttl_days() -> u64 {

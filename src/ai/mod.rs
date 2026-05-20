@@ -461,6 +461,18 @@ pub fn create_provider(settings: &Settings) -> Result<Arc<dyn AiProvider>> {
                 timeout_secs: settings.ai.api_timeout_secs,
             }))
         }
+        "qgenie-cli" => {
+            let cfg = settings.ai.qgenie_cli.as_ref();
+            let model = cfg
+                .and_then(|c| c.model.clone())
+                .unwrap_or_else(|| settings.ai.model.clone());
+            let context_window_size =
+                cfg.map(|c| c.context_window_size).unwrap_or(200_000);
+            Ok(Arc::new(qgenie_cli::QGenieCliProvider {
+                model,
+                context_window_size,
+            }))
+        }
         #[cfg(feature = "vertex")]
         "vertex" => {
             let model = settings.ai.model.clone();
@@ -505,6 +517,7 @@ pub mod copilot_cli;
 pub mod gemini;
 pub mod kiro_cli;
 pub mod openai;
+pub mod qgenie_cli;
 pub mod proxy;
 pub mod quota;
 pub mod token_budget;

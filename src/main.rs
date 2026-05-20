@@ -521,6 +521,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         {
             error!("Web API fatal error: {}", e);
+            std::process::exit(1);
         }
     });
 

@@ -74,23 +74,32 @@ impl BaselineRegistry {
             .map(|(_, name)| name.as_str())
             .unwrap_or("origin");
 
-        let ref_name = format!("{}/master", linus_remote);
-        info!(
-            "Attempting to load MAINTAINERS from {}:MAINTAINERS",
-            ref_name
-        );
-
-        let entries = match Self::read_file_from_git(repo_path, &ref_name, "MAINTAINERS") {
-            Ok(content) => {
-                let reader = std::io::Cursor::new(content);
-                Self::parse_maintainers(reader)?
+        let candidate_branches = ["master", "main"];
+        let mut entries_opt: Option<Vec<_>> = None;
+        for branch in &candidate_branches {
+            let ref_name = format!("{}/{}", linus_remote, branch);
+            info!(
+                "Attempting to load MAINTAINERS from {}:MAINTAINERS",
+                ref_name
+            );
+            match Self::read_file_from_git(repo_path, &ref_name, "MAINTAINERS") {
+                Ok(content) => {
+                    let reader = std::io::Cursor::new(content);
+                    entries_opt = Some(Self::parse_maintainers(reader)?);
+                    break;
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to load MAINTAINERS from git {}: {}.",
+                        ref_name,
+                        e.to_string().trim()
+                    );
+                }
             }
-            Err(e) => {
-                warn!(
-                    "Failed to load MAINTAINERS from git {}: {}. Falling back to local file.",
-                    ref_name,
-                    e.to_string().trim()
-                );
+        }
+        let entries = match entries_opt {
+            Some(e) => e,
+            None => {
                 let maintainers_path = repo_path.join("MAINTAINERS");
                 if maintainers_path.exists() {
                     info!("Loading MAINTAINERS from local file {:?}", maintainers_path);

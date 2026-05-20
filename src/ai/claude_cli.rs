@@ -236,7 +236,7 @@ pub fn build_prompt(request: &AiRequest) -> String {
             "RESPONSE FORMAT: You MUST respond with a SINGLE valid JSON object only (no markdown, no explanation).\n\
              To call tools: {\"tool_calls\": [{\"id\": \"c1\", \"function_name\": \"TOOL_NAME\", \"arguments\": {ARGS}}, {\"id\": \"c2\", \"function_name\": \"OTHER_TOOL\", \"arguments\": {ARGS2}}]}\n\
              Put ALL tool calls in ONE tool_calls array. Do NOT output multiple JSON objects.\n\
-             For your final answer: {\"content\": \"YOUR RESPONSE\"}\n\
+             For your final answer: return the JSON object the prompt asks for directly (e.g. {\"concerns\": [...]}), or {\"content\": \"YOUR RESPONSE\"} if no specific JSON schema was requested.\n\
              Do not mix both. Output exactly one JSON object.\n",
         );
     } else if matches!(request.response_format, Some(AiResponseFormat::Json { .. })) {
@@ -373,6 +373,26 @@ fn parse_single_json(v: &Value, json_str: &str, usage: Option<AiUsage>) -> Resul
 
     // Content field?
     if let Some(content) = v["content"].as_str() {
+        // If the content string is itself valid JSON (e.g. the AI wrapped
+        // {"concerns": [...]} as a string inside {"content": "..."}), return
+        // the inner JSON string so callers can parse it directly.
+        let content_str = content.trim();
+        let content_str = content_str
+            .strip_prefix("```json")
+            .or_else(|| content_str.strip_prefix("```"))
+            .map(|s| s.strip_suffix("```").unwrap_or(s).trim())
+            .unwrap_or(content_str);
+        if content_str.starts_with('{') {
+            if let Ok(_) = serde_json::from_str::<serde_json::Value>(content_str) {
+                return Ok(AiResponse {
+                    content: Some(content_str.to_string()),
+                    thought: None,
+                    thought_signature: None,
+                    tool_calls: None,
+                    usage,
+                });
+            }
+        }
         return Ok(AiResponse {
             content: Some(content.to_string()),
             thought: None,
@@ -495,5 +515,39 @@ mod tests {
 
         let prompt = build_prompt(&req);
         assert!(!prompt.contains("RESPONSE FORMAT"));
+    }
+
+    #[test]
+    fn test_parse_inner_response_concerns_direct() {
+        let json = r#"{"concerns": [{"type": "Bug", "description": "test"}]}"#;
+        let resp = parse_inner_response(json, None).unwrap();
+        assert!(resp.content.is_some());
+        let content = resp.content.unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(v.get("concerns").is_some());
+    }
+
+    #[test]
+    fn test_parse_inner_response_concerns_wrapped_in_content() {
+        // The AI wraps its JSON answer inside {"content": "<json-string>"}
+        let json = "{\"content\": \"{\\\"concerns\\\": [{\\\"type\\\": \\\"Bug\\\", \\\"description\\\": \\\"test\\\"}]}\"}";
+        let resp = parse_inner_response(json, None).unwrap();
+        assert!(resp.content.is_some());
+        let content = resp.content.unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(v.get("concerns").is_some(), "content should be the inner JSON, got: {}", content);
+    }
+
+    #[test]
+    fn test_build_prompt_tools_final_answer_mentions_concerns() {
+        let mut req = make_request(simple_user_msg());
+        req.tools = Some(vec![AiTool {
+            name: "git_log".to_string(),
+            description: "Show git log".to_string(),
+            parameters: json!({"type": "object"}),
+        }]);
+
+        let prompt = build_prompt(&req);
+        assert!(prompt.contains("concerns"));
     }
 }

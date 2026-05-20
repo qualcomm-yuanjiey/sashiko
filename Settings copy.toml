@@ -1,4 +1,4 @@
-log_level = "debug"
+log_level = "info"
 
 [database]
 url = "sashiko.db"
@@ -6,7 +6,7 @@ token = ""
 
 [mailing_lists]
 track = ["linux-kernel"]
-#
+
 [nntp]
 server = "nntp.lore.kernel.org"
 port = 119
@@ -24,9 +24,9 @@ port = 119
 # dry_run = true
 
 [ai]
-provider = "qgenie-cli"
-model = "anthropic::claude-4-6-sonnet"
-max_input_tokens = 40000
+provider = "gemini"
+model = "gemini-3.1-pro-preview"
+max_input_tokens = 900000
 max_interactions = 50
 temperature = 1.0
 
@@ -79,10 +79,10 @@ prompt_caching = true
 
 [server]
 host = "::"
-port = 8002
+port = 8080
 
 [git]
-repository_path = "/local/mnt/workspace/yyj/develop_linux/git-repository/Talos_repository/github/qli-mainline/kernel/"
+repository_path = "third_party/linux"
 
 # Track custom remotes and attempt to apply patches on their branches
 # [[git.custom_remotes]]

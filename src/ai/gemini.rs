@@ -273,10 +273,18 @@ impl GeminiClient {
         reqwest::Client::builder()
             .default_headers(headers)
             .timeout(Duration::from_secs(600))
-            // Reliability Tuning: Prune stale connections proactively
+            // Reliability Tuning: Prune stale connections proactively.
+            // pool_idle_timeout is kept below Google's ~60 s server-side
+            // connection timeout so we never hand out a half-closed socket.
             .tcp_keepalive(Duration::from_secs(60))
-            .pool_idle_timeout(Duration::from_secs(90))
+            .pool_idle_timeout(Duration::from_secs(55))
             .pool_max_idle_per_host(5)
+            // HTTP/2 PING frames detect dead connections before they are
+            // reused, preventing rustls InvalidContentType errors that occur
+            // when a stale connection returns non-TLS data.
+            .http2_keep_alive_interval(Duration::from_secs(30))
+            .http2_keep_alive_timeout(Duration::from_secs(10))
+            .http2_keep_alive_while_idle(true)
             .build()
             .unwrap_or_else(|_| reqwest::Client::new())
     }

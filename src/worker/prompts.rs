@@ -769,14 +769,20 @@ Example:
             let mut outer_attempts = 0;
             let max_outer_attempts = 3;
             let mut success = false;
+            let mut augmented_user_prompt: Option<String> = None;
+            let mut augmented_clean_user_prompt: Option<String> = None;
 
             while outer_attempts < max_outer_attempts && !success {
                 outer_attempts += 1;
 
                 let mut inner_attempts = 0;
                 let max_inner_attempts = 3;
-                let mut active_user_prompt = user_prompt.clone();
-                let mut active_clean_user_prompt = clean_user_prompt.clone();
+                let mut active_user_prompt = augmented_user_prompt
+                    .clone()
+                    .unwrap_or_else(|| user_prompt.clone());
+                let mut active_clean_user_prompt = augmented_clean_user_prompt
+                    .clone()
+                    .unwrap_or_else(|| clean_user_prompt.clone());
 
                 while inner_attempts < max_inner_attempts && !success {
                     inner_attempts += 1;
@@ -812,19 +818,33 @@ Example:
                             } else {
                                 let violation =
                                     "JSON output is missing the required 'concerns' array";
-                                tracing::warn!(
-                                    "Stage {} format validation failed (inner attempt {}/{}): {}. Retrying with augmented prompt.",
-                                    stage,
-                                    inner_attempts,
-                                    max_inner_attempts,
-                                    violation
-                                );
+                                let has_more_attempts = inner_attempts < max_inner_attempts;
+                                if has_more_attempts {
+                                    tracing::warn!(
+                                        "Stage {} format validation failed (inner attempt {}/{}): {}. Retrying with augmented prompt.",
+                                        stage,
+                                        inner_attempts,
+                                        max_inner_attempts,
+                                        violation
+                                    );
+                                } else {
+                                    tracing::warn!(
+                                        "Stage {} format validation failed (inner attempt {}/{}): {}.",
+                                        stage,
+                                        inner_attempts,
+                                        max_inner_attempts,
+                                        violation
+                                    );
+                                }
                                 let reminder = format!(
                                     "\n\nPrevious attempt was rejected: {violation}. You MUST return ONLY a JSON object containing a 'concerns' array. If there are no concerns, return `{{\"concerns\": []}}`."
                                 );
-                                active_user_prompt = format!("{}{}", user_prompt, reminder);
-                                active_clean_user_prompt =
-                                    format!("{}{}", clean_user_prompt, reminder);
+                                let new_user_prompt = format!("{}{}", user_prompt, reminder);
+                                let new_clean_user_prompt = format!("{}{}", clean_user_prompt, reminder);
+                                augmented_user_prompt = Some(new_user_prompt.clone());
+                                augmented_clean_user_prompt = Some(new_clean_user_prompt.clone());
+                                active_user_prompt = new_user_prompt;
+                                active_clean_user_prompt = new_clean_user_prompt;
                             }
                         }
                         Err(e) => {
@@ -1121,12 +1141,22 @@ Example:
                                     break;
                                 }
                                 Err(violation) => {
-                                    tracing::warn!(
-                                        "Stage 10 format validation failed (attempt {}/{}): {}. Retrying with augmented prompt.",
-                                        retries + 1,
-                                        max_retries,
-                                        violation
-                                    );
+                                    let has_more_attempts = retries + 1 < max_retries;
+                                    if has_more_attempts {
+                                        tracing::warn!(
+                                            "Stage 10 format validation failed (attempt {}/{}): {}. Retrying with augmented prompt.",
+                                            retries + 1,
+                                            max_retries,
+                                            violation
+                                        );
+                                    } else {
+                                        tracing::warn!(
+                                            "Stage 10 format validation failed (attempt {}/{}): {}.",
+                                            retries + 1,
+                                            max_retries,
+                                            violation
+                                        );
+                                    }
                                     let reminder = format!(
                                         "\n\nPrevious attempt was rejected: {violation}. Strictly follow the formatting rules."
                                     );
@@ -1214,7 +1244,14 @@ Example:
         let cleaned = crate::utils::clean_json_string(&raw_text);
         let parsed: Value = serde_json::from_str(&cleaned).unwrap_or_else(|_| {
             let cands = find_json_candidates(&raw_text);
-            cands.into_iter().last().unwrap_or(json!({}))
+            cands.into_iter().last().unwrap_or_else(|| {
+                tracing::warn!(
+                    "Stage {}: AI response contained no parseable JSON; raw text (first 200 chars): {:?}",
+                    stage,
+                    &raw_text[..raw_text.len().min(200)]
+                );
+                json!({})
+            })
         });
         Ok((parsed, t_in, t_out, t_cached))
     }
